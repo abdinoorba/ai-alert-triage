@@ -25,7 +25,7 @@ between the two runs is the **environment context** supplied to the tool.
 | | Without context | With context |
 |---|---|---|
 | **Verdict** | `suspicious` | `benign` |
-| **Confidence** | 0.78 | 0.92 |
+| **Confidence** | 0.78 | 0.95 |
 | **Needs human review?** | **Yes** | No |
 
 **Without context**, the tool correctly hedges. It refuses to convict on surface
