@@ -30,6 +30,10 @@ Return ONLY a JSON object (no markdown fences, no prose) with these fields:
 - verification_prompts: specific things a human analyst should check
 - recommended_actions: a list of next steps
 
+If a process includes a `decoded_command` field, treat that decoded text as \
+the ground-truth content of the command and base your reasoning on it, not on \
+any description in `notes`.
+
 Be honest about uncertainty. If key context is missing (e.g. whether a user is \
 an authorized admin, or whether a source IP is expected for them), put that in \
 `unknowns`, set requires_human_verification to true, and prefer "indeterminate" \

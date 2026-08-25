@@ -58,15 +58,18 @@ context it's given, and the human supplies the context the machine lacks.
 ## Pipeline
 
 ```
-alert (JSON) -> enrich observables -> verify observables -> reason (LLM) -> verdict
+alert (JSON) -> decode encoded commands -> enrich observables -> verify observables -> reason (LLM) -> verdict
 ```
 
 1. **Load** a structured alert.
-2. **Enrich** its observables against threat intel (AbuseIPDB now; VirusTotal/OTX next).
-3. **Verify** every enriched observable actually appears, verbatim, in the raw log -
+2. **Decode** any PowerShell `-EncodedCommand` blobs deterministically (base64 /
+   UTF-16LE) and attach the real command to the alert, so the model reasons over
+   verified content instead of a description of it.
+3. **Enrich** its observables against threat intel (AbuseIPDB now; VirusTotal/OTX next).
+4. **Verify** every enriched observable actually appears, verbatim, in the raw log -
    a deterministic guard against a future extraction layer hallucinating or altering
    an IOC.
-4. **Reason** with an LLM that returns a structured verdict: classification,
+5. **Reason** with an LLM that returns a structured verdict: classification,
    confidence, MITRE ATT&CK mapping, `unknowns`, `requires_human_verification`,
    and recommended actions.
 
@@ -109,21 +112,38 @@ industry scale.
 
 ---
 
+## Verifying, not trusting: encoded command decoding
+
+Encoded PowerShell commands are a favorite of both attackers (to hide intent) and
+legitimate admin scripts (for reliability). A triage tool should never take a
+*description* of what an encoded command does on faith - it should decode it.
+
+Before reasoning, the pipeline deterministically decodes any `-EncodedCommand`
+blob and shows the analyst the real command. For the benign example above, that
+means the tool doesn't trust a note claiming the command is safe - it decodes it
+to `$source="D:\Backups"; Get-ChildItem -Path $source` and reasons from that.
+Because the decoded content is ground truth, this also measurably reduced the
+model's tendency to over-map MITRE techniques: given a proven-benign command, it
+correctly maps none.
+
+---
+
 ## Known limitations (and why they matter)
 
 Being honest about where the tool is wrong is part of the design - an analyst's job
 is to know when *not* to trust the output.
 
-- **The LLM over-maps MITRE ATT&CK.** Across test alerts it consistently reaches for
-  techniques with only weak supporting evidence (e.g. tagging a routine
-  `-ExecutionPolicy Bypass` as *Impair Defenses*). MITRE mappings should be treated
-  as suggestions for a human to confirm, not ground truth.
+- **The LLM over-maps MITRE ATT&CK.** On alerts without a decoded, proven-benign
+  command, it can still reach for techniques with only weak supporting evidence
+  (e.g. tagging a routine `-ExecutionPolicy Bypass` as *Impair Defenses*). MITRE
+  mappings should be treated as suggestions for a human to confirm, not ground truth.
 - **It sometimes returns deprecated ATT&CK IDs** (e.g. the retired `T1086` instead of
   the current `T1059.001`). Mappings should be validated against the current ATT&CK
   version.
-- **It can trust labels instead of verifying them.** When context *states* an encoded
-  command is benign, the model may take that at face value rather than decoding it -
-  which is exactly why a deterministic decode step is on the roadmap.
+- **The model summarizes even verified content.** It may paraphrase a decoded command
+  (e.g. shortening `$source="D:\Backups"; Get-ChildItem -Path $source` to
+  `Get-ChildItem -Path D:\Backups`), which is why the raw decoded string is always
+  shown to the analyst as the source of truth.
 
 These aren't reasons to distrust the tool; they're reasons the human-verification
 layer exists.
@@ -132,7 +152,7 @@ layer exists.
 
 ## Roadmap
 
-- [ ] Deterministic base64 decode of `-EncodedCommand`, shown to the analyst (verify, don't trust the label)
+- [x] Deterministic base64 decode of `-EncodedCommand`, shown to the analyst (verify, don't trust the label)
 - [ ] Hash enrichment (VirusTotal); domain/URL enrichment (OTX)
 - [ ] LLM extraction layer: paste a raw log or free text -> structured alert (verification guard already wired in)
 - [ ] `environment_context` toggle exposed in a UI, to demo the verdict flip interactively

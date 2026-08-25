@@ -16,6 +16,7 @@ Works with NO API keys (mock mode). Add keys in a .env file to get real results.
 import sys
 import json
 from dotenv import load_dotenv
+from decode import decode_alert
 
 load_dotenv()  # read .env into environment before anything reads a key
 
@@ -51,6 +52,16 @@ def main():
     print(f"    (loaded from {path})")
     print(f"    {alert['description']}")
 
+    # Step 1.5: decode any encoded PowerShell commands (deterministic, verified)
+    decoded = decode_alert(alert)
+    if decoded:
+        print("\n--- Decoded commands ---")
+        for d in decoded:
+            if d["ok"]:
+                print(f"  {d['process']}: {d['decoded']}")
+            else:
+                print(f"  {d['process']}: [decode failed: {d.get('error')}]")
+
     # Step 2: enrich (+ verify)
     enrichment = enrich_alert(alert)
     enrichment = verify_observables(alert, enrichment)
@@ -69,6 +80,8 @@ def main():
     if verdict.get("mock"):
         print("\n(MOCK mode - set ANTHROPIC_API_KEY and ABUSEIPDB_API_KEY in .env "
               "for real results.)")
+
+
 
 
 if __name__ == "__main__":
