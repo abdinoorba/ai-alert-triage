@@ -1,0 +1,31 @@
+{
+  "alert_id": "A-002",
+  "timestamp": "2026-08-24T03:00:12Z",
+  "alert_name": "Encoded PowerShell command executed at off-hours",
+  "severity": "high",
+  "source": "manual",
+  "description": "Encoded PowerShell command with ExecutionPolicy Bypass launched at 03:00 by service account svc-backup on file server FS-02, parent process taskeng.exe",
+  "entities": {
+    "source_ips": [],
+    "dest_ips": [],
+    "domains": [],
+    "urls": [],
+    "file_hashes": [],
+    "users": ["svc-backup"],
+    "hosts": ["FS-02"],
+    "processes": [
+      {
+        "name": "powershell.exe",
+        "command_line": "powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABzAG8AdQByAGMAZQA9ACIARAA6AFwAQgBhAGMAawB1AHAAcwAiADsAIABHAGUAdAAtAEMAaABpAGwAZABJAHQAZQBtACAALQBQAGEAdABoACAAJABzAG8AdQByAGMAZQA="
+      }
+    ]
+  },
+  "raw_log": "2026-08-24T03:00:12Z proc.create host=FS-02 user=svc-backup parent=taskeng.exe cmd=\"powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand JABzAG8AdQByAGMAZQA9ACIARAA6AFwAQgBhAGMAawB1AHAAcwAiADsAIABHAGUAdAAtAEMAaABpAGwAZABJAHQAZQBtACAALQBQAGEAdABoACAAJABzAG8AdQByAGMAZQA=\"",
+  "environment_context": {
+    "known_admins": ["svc-backup"],
+    "admin_hosts": ["FS-02"],
+    "maintenance_windows": ["Daily 02:00-04:00 UTC"],
+    "allowlisted_tasks": ["Nightly backup job on FS-02 via svc-backup"],
+    "notes": "svc-backup runs the nightly D:\\Backups job via Task Scheduler; encoded command decodes to a directory listing of D:\\Backups"
+  }
+}

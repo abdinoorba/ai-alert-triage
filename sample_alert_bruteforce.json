@@ -1,0 +1,26 @@
+{
+  "alert_id": "A-001",
+  "timestamp": "2026-08-23T02:14:00Z",
+  "alert_name": "Multiple failed logins followed by success",
+  "severity": "high",
+  "source": "manual",
+  "description": "40 failed logins then a successful login for user jsmith from 45.83.140.2",
+  "entities": {
+    "source_ips": ["45.83.140.2"],
+    "dest_ips": [],
+    "domains": [],
+    "urls": [],
+    "file_hashes": [],
+    "users": ["jsmith"],
+    "hosts": ["WKS-4471"],
+    "processes": []
+  },
+  "raw_log": "2026-08-23T02:11:00Z auth.failure user=jsmith src=45.83.140.2 host=WKS-4471 ... (x40) ... 2026-08-23T02:14:00Z auth.success user=jsmith src=45.83.140.2 host=WKS-4471",
+  "environment_context": {
+    "known_admins": [],
+    "admin_hosts": [],
+    "maintenance_windows": [],
+    "allowlisted_tasks": [],
+    "notes": ""
+  }
+}
