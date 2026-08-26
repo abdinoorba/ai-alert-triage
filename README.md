@@ -65,7 +65,8 @@ alert (JSON) -> decode encoded commands -> enrich observables -> verify observab
 2. **Decode** any PowerShell `-EncodedCommand` blobs deterministically (base64 /
    UTF-16LE) and attach the real command to the alert, so the model reasons over
    verified content instead of a description of it.
-3. **Enrich** its observables against threat intel (AbuseIPDB now; VirusTotal/OTX next).
+3. **Enrich** its observables against threat intel: IP reputation via **AbuseIPDB**,
+   and files (hashes), domains, and URLs via **VirusTotal** multi-engine detection.
 4. **Verify** every enriched observable actually appears, verbatim, in the raw log -
    a deterministic guard against a future extraction layer hallucinating or altering
    an IOC.
@@ -75,6 +76,8 @@ alert (JSON) -> decode encoded commands -> enrich observables -> verify observab
 
 Each stage is written against the alert **schema**, not against any specific file,
 so new alerts and new enrichment sources drop in without touching downstream code.
+The three VirusTotal observable types share one generic lookup function rather than
+a separate copy per type.
 
 ---
 
@@ -86,17 +89,34 @@ you sign up for anything.
 ```bash
 pip install -r requirements.txt
 python pipeline.py                                  # runs the default alert
-python pipeline.py sample_alert_admin_nocontext.json
-python pipeline.py sample_alert_admin_withcontext.json
+python pipeline.py sample_alert_admin_nocontext.json    # benign-but-scary, hedged
+python pipeline.py sample_alert_admin_withcontext.json  # same alert, cleared by context
+python pipeline.py sample_alert_malware.json            # malicious file (EICAR test hash)
 ```
 
 Go live one key at a time by adding them to a `.env` file (copy `.env.example`):
 
 - `ABUSEIPDB_API_KEY` - free tier at abuseipdb.com; turns on real IP reputation.
+- `VIRUSTOTAL_API_KEY` - free tier at virustotal.com; turns on real file/domain/URL detection.
 - `ANTHROPIC_API_KEY` - turns on real LLM reasoning instead of the mock verdict.
 
 To reproduce the before/after above, run the `nocontext` and `withcontext` alert
 files back to back.
+
+---
+
+## Sample alerts
+
+The included alerts span the full range of verdicts, each exercising a different
+part of the pipeline:
+
+- **`sample_alert_bruteforce.json`** - failed logins then success (IP reputation).
+- **`sample_alert_admin_nocontext.json`** - encoded PowerShell scheduled task, no
+  context (decode + hedged verdict).
+- **`sample_alert_admin_withcontext.json`** - the same alert with environment
+  context (verdict flips to benign).
+- **`sample_alert_malware.json`** - a file executed from Downloads, flagged by most
+  VirusTotal engines (hash enrichment + confident malicious verdict).
 
 ---
 
@@ -122,9 +142,13 @@ Before reasoning, the pipeline deterministically decodes any `-EncodedCommand`
 blob and shows the analyst the real command. For the benign example above, that
 means the tool doesn't trust a note claiming the command is safe - it decodes it
 to `$source="D:\Backups"; Get-ChildItem -Path $source` and reasons from that.
-Because the decoded content is ground truth, this also measurably reduced the
-model's tendency to over-map MITRE techniques: given a proven-benign command, it
-correctly maps none.
+
+A recurring finding across test alerts: **the model's MITRE ATT&CK accuracy tracks
+the quality of the evidence it's given.** With decisive input - a decoded benign
+command, or a file flagged by 66/75 VirusTotal engines - it maps techniques
+precisely (or correctly maps none). On alerts with only ambiguous surface features,
+it over-reaches. Verified evidence doesn't just change the verdict; it sharpens the
+reasoning.
 
 ---
 
@@ -133,10 +157,10 @@ correctly maps none.
 Being honest about where the tool is wrong is part of the design - an analyst's job
 is to know when *not* to trust the output.
 
-- **The LLM over-maps MITRE ATT&CK.** On alerts without a decoded, proven-benign
-  command, it can still reach for techniques with only weak supporting evidence
-  (e.g. tagging a routine `-ExecutionPolicy Bypass` as *Impair Defenses*). MITRE
-  mappings should be treated as suggestions for a human to confirm, not ground truth.
+- **The LLM over-maps MITRE ATT&CK on weak evidence.** On alerts without decisive
+  input, it can reach for techniques with only weak support (e.g. tagging a routine
+  `-ExecutionPolicy Bypass` as *Impair Defenses*). MITRE mappings should be treated
+  as suggestions for a human to confirm, not ground truth.
 - **It sometimes returns deprecated ATT&CK IDs** (e.g. the retired `T1086` instead of
   the current `T1059.001`). Mappings should be validated against the current ATT&CK
   version.
@@ -153,7 +177,8 @@ layer exists.
 ## Roadmap
 
 - [x] Deterministic base64 decode of `-EncodedCommand`, shown to the analyst (verify, don't trust the label)
-- [ ] Hash enrichment (VirusTotal); domain/URL enrichment (OTX)
+- [x] Hash, domain, and URL enrichment (VirusTotal)
+- [ ] Additional enrichment source (OTX) and multi-source cross-referencing on IPs
 - [ ] LLM extraction layer: paste a raw log or free text -> structured alert (verification guard already wired in)
 - [ ] `environment_context` toggle exposed in a UI, to demo the verdict flip interactively
 - [ ] React front end with an analyst review/confirm step before enrichment runs
