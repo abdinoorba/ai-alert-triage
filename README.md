@@ -58,18 +58,21 @@ context it's given, and the human supplies the context the machine lacks.
 ## Pipeline
 
 ```
-alert (JSON) -> decode encoded commands -> enrich observables -> verify observables -> reason (LLM) -> verdict
+input (JSON file  OR  raw text -> extract -> confirm)
+  -> decode encoded commands -> enrich observables -> verify observables
+  -> reason (LLM) -> verdict
 ```
 
-1. **Load** a structured alert.
+1. **Input.** Either load a structured alert (JSON), or paste a raw log / free text
+   and have the LLM **extract** it into the alert schema. Extracted alerts are shown
+   to the analyst to confirm or edit before anything runs.
 2. **Decode** any PowerShell `-EncodedCommand` blobs deterministically (base64 /
    UTF-16LE) and attach the real command to the alert, so the model reasons over
    verified content instead of a description of it.
-3. **Enrich** its observables against threat intel: IP reputation via **AbuseIPDB**,
+3. **Enrich** the observables against threat intel: IP reputation via **AbuseIPDB**,
    and files (hashes), domains, and URLs via **VirusTotal** multi-engine detection.
-4. **Verify** every enriched observable actually appears, verbatim, in the raw log -
-   a deterministic guard against a future extraction layer hallucinating or altering
-   an IOC.
+4. **Verify** every observable actually appears, verbatim, in the raw text - a
+   deterministic guard against the extraction layer hallucinating or altering an IOC.
 5. **Reason** with an LLM that returns a structured verdict: classification,
    confidence, MITRE ATT&CK mapping, `unknowns`, `requires_human_verification`,
    and recommended actions.
@@ -88,17 +91,19 @@ you sign up for anything.
 
 ```bash
 pip install -r requirements.txt
-python pipeline.py                                  # runs the default alert
+python pipeline.py                                      # runs the default alert
 python pipeline.py sample_alert_admin_nocontext.json    # benign-but-scary, hedged
 python pipeline.py sample_alert_admin_withcontext.json  # same alert, cleared by context
 python pipeline.py sample_alert_malware.json            # malicious file (EICAR test hash)
+python pipeline.py --text "raw log line with an IP or hash..."  # extract from text, confirm, run
+python pipeline.py --text                               # prompts you to paste text
 ```
 
 Go live one key at a time by adding them to a `.env` file (copy `.env.example`):
 
 - `ABUSEIPDB_API_KEY` - free tier at abuseipdb.com; turns on real IP reputation.
 - `VIRUSTOTAL_API_KEY` - free tier at virustotal.com; turns on real file/domain/URL detection.
-- `ANTHROPIC_API_KEY` - turns on real LLM reasoning instead of the mock verdict.
+- `ANTHROPIC_API_KEY` - turns on real LLM reasoning, and the smart extraction layer.
 
 To reproduce the before/after above, run the `nocontext` and `withcontext` alert
 files back to back.
@@ -117,6 +122,31 @@ part of the pipeline:
   context (verdict flips to benign).
 - **`sample_alert_malware.json`** - a file executed from Downloads, flagged by most
   VirusTotal engines (hash enrichment + confident malicious verdict).
+
+---
+
+## From raw text to a structured alert (extraction layer)
+
+Analysts don't work in clean JSON - they get raw log lines, copied alert blobs, and
+plain-English descriptions. The `--text` mode takes any of that and turns it into a
+structured alert, so nothing has to be hand-formatted.
+
+The extraction layer is treated as **untrusted by design**, because an LLM reading
+free text can misread or invent an observable - and a single wrong digit in an IP or
+hash would send enrichment down the wrong path. Three safeguards address this:
+
+1. **Deterministic verification.** After extraction, every observable it pulled out
+   is checked to confirm it appears, character-for-character, in the original text.
+   Anything that doesn't match is flagged before enrichment runs.
+2. **Human confirmation.** The extracted alert is shown to the analyst to review,
+   edit, save, or reject - a second human-in-the-loop checkpoint, this time at the
+   *input* stage rather than the verdict stage.
+3. **Offline fallback.** With no LLM key set, a regex-only extractor still pulls IPs,
+   hashes, domains, and URLs, so the path runs (more crudely) with zero keys.
+
+Example: pasting *"file executed from Downloads sha256=275a021b... on host WKS-2210"*
+produces a structured alert with the hash and host correctly extracted and verified,
+which then enriches (61/75 VirusTotal engines) into a high-confidence malicious verdict.
 
 ---
 
@@ -145,7 +175,7 @@ to `$source="D:\Backups"; Get-ChildItem -Path $source` and reasons from that.
 
 A recurring finding across test alerts: **the model's MITRE ATT&CK accuracy tracks
 the quality of the evidence it's given.** With decisive input - a decoded benign
-command, or a file flagged by 66/75 VirusTotal engines - it maps techniques
+command, or a file flagged by 60+/75 VirusTotal engines - it maps techniques
 precisely (or correctly maps none). On alerts with only ambiguous surface features,
 it over-reaches. Verified evidence doesn't just change the verdict; it sharpens the
 reasoning.
@@ -168,6 +198,9 @@ is to know when *not* to trust the output.
   (e.g. shortening `$source="D:\Backups"; Get-ChildItem -Path $source` to
   `Get-ChildItem -Path D:\Backups`), which is why the raw decoded string is always
   shown to the analyst as the source of truth.
+- **Extraction currently verifies observables, not full command lines.** IPs, hashes,
+  domains, and URLs are checked verbatim against the source text; a long
+  `-EncodedCommand` blob pulled during extraction is not yet verified the same way.
 
 These aren't reasons to distrust the tool; they're reasons the human-verification
 layer exists.
@@ -178,9 +211,9 @@ layer exists.
 
 - [x] Deterministic base64 decode of `-EncodedCommand`, shown to the analyst (verify, don't trust the label)
 - [x] Hash, domain, and URL enrichment (VirusTotal)
+- [x] LLM extraction layer: paste a raw log or free text -> structured alert, with verification and analyst confirmation
+- [ ] Extend verbatim verification to extracted command-line / encoded-command blobs
 - [ ] Additional enrichment source (OTX) and multi-source cross-referencing on IPs
-- [ ] LLM extraction layer: paste a raw log or free text -> structured alert (verification guard already wired in)
-- [ ] `environment_context` toggle exposed in a UI, to demo the verdict flip interactively
-- [ ] React front end with an analyst review/confirm step before enrichment runs
+- [ ] React front end: paste text or edit an alert, confirm, and view the verdict in a UI
 - [ ] Prompt tuning to reduce MITRE over-mapping and enforce current ATT&CK IDs
 - [ ] More sample alerts, including additional benign-but-scary cases
